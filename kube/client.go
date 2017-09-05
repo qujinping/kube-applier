@@ -23,17 +23,23 @@ const (
 type ClientInterface interface {
 	Apply(string) (cmd, output string, err error)
 	CheckVersion() error
+	Configure() error
 }
 
 // Client enables communication with the Kubernetes API Server through kubectl commands.
 // The Server field enables discovery of the API server when kube-proxy is not configured (see README.md for more information).
 type Client struct {
 	Server string
+        TokenPath string
 	// Location of the written kubeconfig file within the container
 	kubeconfigFilePath string
 
 	// A directory with write permissions for kubectl to load store its schema cache
 	schemaCacheDir string
+}
+
+type OpenshiftClient struct {
+        Client
 }
 
 // Configure writes the kubeconfig file to be used for authenticating kubectl commands.
@@ -59,7 +65,11 @@ func (c *Client) Configure() error {
 		c.schemaCacheDir = scd
 	}
 
-	token, err := ioutil.ReadFile(tokenPath)
+        tokenFile := tokenPath
+        if c.TokenPath != "" {
+                tokenFile = c.TokenPath
+        }
+	token, err := ioutil.ReadFile(tokenFile)
 	if err != nil {
 		return fmt.Errorf("Error accessing token for kubeconfig file: %v", err)
 	}
@@ -138,6 +148,57 @@ func (c *Client) Apply(path string) (cmd, output string, err error) {
 	args := []string{"kubectl", "apply", "--schema-cache-dir", c.schemaCacheDir, "-f", path}
 	if c.Server != "" {
 		args = append(args, fmt.Sprintf("--kubeconfig=%s", c.kubeconfigFilePath))
+	}
+	cmd = strings.Join(args, " ")
+	stdout, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+	if err != nil {
+		err = fmt.Errorf("Error: %v", err)
+	}
+	return cmd, string(stdout), err
+}
+
+// Configure writes the kubeconfig file to be used for authenticating kubectl commands.
+func (c *OpenshiftClient) Configure() error {
+	return c.Client.Configure()
+}
+
+// CheckVersion returns an error if the server and client have incompatible versions, otherwise returns nil.
+func (c *OpenshiftClient) CheckVersion() error {
+	args := []string{"oc", "version"}
+	if c.Server != "" {
+		args = append(args, fmt.Sprintf("--config=%s", c.kubeconfigFilePath))
+	}
+	stdout, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+	output := strings.TrimSuffix(string(stdout), "\n")
+	if err != nil {
+		return fmt.Errorf("Error checking kubectl version: %v", output)
+	}
+
+	// Using regular expressions, parse for the Major and Minor version numbers for both client and server.
+	clientPattern := regexp.MustCompile("oc v([0-9]+).([0-9]+)")
+	serverPattern := regexp.MustCompile("openshift v([0-9]+).([0-9]+)")
+
+	clientInfo := clientPattern.FindAllStringSubmatch(output, -1)
+	clientMajor := clientInfo[0][1]
+	clientMinor := clientInfo[0][2]
+
+	serverInfo := serverPattern.FindAllStringSubmatch(output, -1)
+	serverMajor := serverInfo[0][1]
+	serverMinor := serverInfo[0][2]
+
+        if (clientMajor == serverMajor &&  clientMinor == serverMinor) {
+	        return nil
+        } else {
+	        return fmt.Errorf("Error: openshift client and server versions are incompatible. Client is %s.%s; server is %s.%s. Client must be same minor release as server.", clientMajor, clientMinor, serverMajor, serverMinor)
+        }
+}
+
+// Apply attempts to "kubectl apply" the file located at path.
+// It returns the full apply command and its output.
+func (c *OpenshiftClient) Apply(path string) (cmd, output string, err error) {
+	args := []string{"oc", "apply", "--schema-cache-dir", c.schemaCacheDir, "-f", path}
+	if c.Server != "" {
+		args = append(args, fmt.Sprintf("--config=%s", c.kubeconfigFilePath))
 	}
 	cmd = strings.Join(args, " ")
 	stdout, err := exec.Command(args[0], args[1:]...).CombinedOutput()

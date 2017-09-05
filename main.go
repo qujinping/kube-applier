@@ -30,6 +30,8 @@ func main() {
 	listenPort := sysutil.GetRequiredEnvInt("LISTEN_PORT")
 	server := sysutil.GetEnvStringOrDefault("SERVER", "")
 	blacklistPath := sysutil.GetEnvStringOrDefault("BLACKLIST_PATH", "")
+	tokenPath := sysutil.GetEnvStringOrDefault("TOKEN_PATH", "")
+	openshift := sysutil.GetEnvStringOrDefault("OPENSHIFT", "")
 
 	// A file that contains a list of files to consider for application.
 	// If the env var is not defined or if the file is empty act like a no-op and
@@ -49,8 +51,16 @@ func main() {
 		log.Fatal(err)
 	}
 
-	kubeClient := &kube.Client{Server: server}
-	kubeClient.Configure()
+        var kubeClient kube.ClientInterface
+        if openshift == "" {
+	        kubeClient = &kube.Client{Server: server, TokenPath: tokenPath}
+	        kubeClient.Configure()
+        } else {
+	        kubeClient = &kube.OpenshiftClient{
+                                  kube.Client{Server: server},
+                             }
+	        kubeClient.Configure()
+        }
 
 	gitUtil := &git.GitUtil{repoPath}
 	fileSystem := &sysutil.FileSystem{}
