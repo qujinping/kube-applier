@@ -11,9 +11,12 @@ import (
 )
 
 const serverTemplatePath = "/templates/status.html"
+const serverStaticPath = "/static/"
 
 type WebServer struct {
 	ListenPort     int
+	TemplatePath   string
+	StaticPath     string
 	Clock          sysutil.ClockInterface
 	MetricsHandler http.Handler
 	FullRunQueue   chan<- bool
@@ -92,16 +95,24 @@ func (ws *WebServer) Start() {
 	log.Println("Launching webserver")
 	lastRun := &run.Result{RunID: -1}
 
-	template, err := sysutil.CreateTemplate(serverTemplatePath)
+	templatePath := serverTemplatePath
+	if ws.TemplatePath != "" {
+		templatePath = ws.TemplatePath + "/status.html"
+	}
+	template, err := sysutil.CreateTemplate(templatePath)
 	if err != nil {
 		ws.Errors <- err
 		return
 	}
 
+	staticPath := serverStaticPath
+	if ws.StaticPath != "" {
+		staticPath = ws.StaticPath
+	}
 	statusPageHandler := &StatusPageHandler{template, lastRun, ws.Clock}
 	http.Handle("/", statusPageHandler)
 	http.Handle("/metrics", ws.MetricsHandler)
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticPath))))
 	forceRunHandler := &ForceRunHandler{ws.FullRunQueue}
 	http.Handle("/api/v1/forceRun", forceRunHandler)
 

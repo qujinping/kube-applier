@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -e
+
+APPROOT=/opt/app-root
+
+export TEMPLATE_PATH=$APPROOT/etc/templates
+export STATIC_PATH=$APPROOT/data/static
+export OPENSHIFT=true
+
+exec $APPROOT/bin/kube-applier "$@"

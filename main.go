@@ -31,6 +31,8 @@ func main() {
 	server := sysutil.GetEnvStringOrDefault("SERVER", "")
 	blacklistPath := sysutil.GetEnvStringOrDefault("BLACKLIST_PATH", "")
 	tokenPath := sysutil.GetEnvStringOrDefault("TOKEN_PATH", "")
+	templatePath := sysutil.GetEnvStringOrDefault("TEMPLATE_PATH", "")
+	staticPath := sysutil.GetEnvStringOrDefault("STATIC_PATH", "")
 	openshift := sysutil.GetEnvStringOrDefault("OPENSHIFT", "")
 
 	// A file that contains a list of files to consider for application.
@@ -51,16 +53,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-        var kubeClient kube.ClientInterface
-        if openshift == "" {
-	        kubeClient = &kube.Client{Server: server, TokenPath: tokenPath}
-	        kubeClient.Configure()
-        } else {
-	        kubeClient = &kube.OpenshiftClient{
-                                  kube.Client{Server: server},
-                             }
-	        kubeClient.Configure()
-        }
+	var kubeClient kube.ClientInterface
+	if openshift == "" {
+		kubeClient = &kube.Client{Server: server, TokenPath: tokenPath, TemplatePath: templatePath}
+	} else {
+		kubeClient = &kube.OpenshiftClient{
+			kube.Client{Server: server, TokenPath: tokenPath, TemplatePath: templatePath},
+		}
+	}
+	kubeClient.Configure()
 
 	gitUtil := &git.GitUtil{repoPath}
 	fileSystem := &sysutil.FileSystem{}
@@ -116,7 +117,7 @@ func main() {
 		runCount,
 	}
 	scheduler := &run.Scheduler{gitUtil, pollTicker, fullRunTicker, quickRunQueue, fullRunQueue, errors, ""}
-	webserver := &webserver.WebServer{listenPort, clock, metrics.GetHandler(), fullRunQueue, runResults, errors}
+	webserver := &webserver.WebServer{listenPort, templatePath, staticPath, clock, metrics.GetHandler(), fullRunQueue, runResults, errors}
 
 	go metrics.StartMetricsLoop()
 	go scheduler.Start()

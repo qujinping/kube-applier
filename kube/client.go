@@ -29,8 +29,9 @@ type ClientInterface interface {
 // Client enables communication with the Kubernetes API Server through kubectl commands.
 // The Server field enables discovery of the API server when kube-proxy is not configured (see README.md for more information).
 type Client struct {
-	Server string
-        TokenPath string
+	Server       string
+	TokenPath    string
+	TemplatePath string
 	// Location of the written kubeconfig file within the container
 	kubeconfigFilePath string
 
@@ -39,7 +40,7 @@ type Client struct {
 }
 
 type OpenshiftClient struct {
-        Client
+	Client
 }
 
 // Configure writes the kubeconfig file to be used for authenticating kubectl commands.
@@ -65,10 +66,10 @@ func (c *Client) Configure() error {
 		c.schemaCacheDir = scd
 	}
 
-        tokenFile := tokenPath
-        if c.TokenPath != "" {
-                tokenFile = c.TokenPath
-        }
+	tokenFile := tokenPath
+	if c.TokenPath != "" {
+		tokenFile = c.TokenPath
+	}
 	token, err := ioutil.ReadFile(tokenFile)
 	if err != nil {
 		return fmt.Errorf("Error accessing token for kubeconfig file: %v", err)
@@ -81,7 +82,11 @@ func (c *Client) Configure() error {
 	data.Token = string(token)
 	data.Server = c.Server
 
-	template, err := sysutil.CreateTemplate(kubeconfigTemplatePath)
+	templatePath := kubeconfigTemplatePath
+	if c.TemplatePath != "" {
+		templatePath = c.TemplatePath + "/kubeconfig"
+	}
+	template, err := sysutil.CreateTemplate(templatePath)
 	if err != nil {
 		return fmt.Errorf("Error parsing kubeconfig template: %v", err)
 	}
@@ -186,11 +191,11 @@ func (c *OpenshiftClient) CheckVersion() error {
 	serverMajor := serverInfo[0][1]
 	serverMinor := serverInfo[0][2]
 
-        if (clientMajor == serverMajor &&  clientMinor == serverMinor) {
-	        return nil
-        } else {
-	        return fmt.Errorf("Error: openshift client and server versions are incompatible. Client is %s.%s; server is %s.%s. Client must be same minor release as server.", clientMajor, clientMinor, serverMajor, serverMinor)
-        }
+	if clientMajor == serverMajor && clientMinor == serverMinor {
+		return nil
+	} else {
+		return fmt.Errorf("Error: openshift client and server versions are incompatible. Client is %s.%s; server is %s.%s. Client must be same minor release as server.", clientMajor, clientMinor, serverMajor, serverMinor)
+	}
 }
 
 // Apply attempts to "kubectl apply" the file located at path.
